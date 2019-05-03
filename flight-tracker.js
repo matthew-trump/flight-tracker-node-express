@@ -1,24 +1,17 @@
-const winston = require('winston');
+const logger = require("./logger");
 const flightAwareClient = require("./flight-aware-client");
+const firebaseConnection = require("./firebase-connection");
 
 const EVENTS_FILE = process.env.EVENTS_FILE;
-//const FIREBASE_CREDENTIALS = process.env.FIREBASE_CREDENTIALS;
-const TIMER_INTERVAL = process.env.TIMER_INTERVAL || 60000;
+const TIMER_INTERVAL = process.env.TIMER_INTERVAL || 60000 * 30;
 
 
 const EVENTS = require(EVENTS_FILE);
 
-
-//var firebase = require("firebase-admin");
-//const debug = require('debug')('flight-tracker');
-/** 
-const serviceAccount = require(FIREBASE_CREDENTIALS);
-
-firebase.initializeApp({
-    credential: firebase.credential.cert(serviceAccount),
-    databaseURL: databaseURL
-});
-**/
+const PRE_BUFFER = 3600000 * 48;
+const POST_BUFFER = 3600000 * 2;
+const THRESHOLD_NORMAL = 60000; //one minute
+const THRESHOLD_ENROUTE = 10000; //ten seconds
 
 const parseDate = (dateString) => {
     return Date.parse(dateString);
@@ -27,20 +20,19 @@ class FlightTracker {
 
     constructor() {
         this.jsonData = {};
+        this.currentFlightIndex = {};
         this.currentJsonData = {};
         this.originalConfig = JSON.parse(JSON.stringify(EVENTS))
         this.currentFlightIndex = {};
         this.distinctFlights = {};
-
+        this.eventStatus = {}
         this.initializeEvents();
 
-        console.log("EVENTS", this.events);
-        /**
         this.updateEvents();
+
         this.timeout = setInterval(() => {
             this.updateEvents();
         }, TIMER_INTERVAL);
-         */
 
     }
     initializeEvents() {
@@ -95,7 +87,7 @@ class FlightTracker {
 
 
             }
-            console.log("FLIGHTS", flights);
+            //console.log("FLIGHTS", flights);
             for (let i = 0, len = flights.length; i < len; i++) {
                 const flight = flights[i];
 
@@ -119,8 +111,8 @@ class FlightTracker {
             const becomeInactiveAt = flights[flights.length - 1].configured.arrivalTime + (6 * 3600000); //six hours after last scheduled arrival
 
 
-            winston.log("info", id, "active from", new Date(becomeActiveAt), "to", new Date(becomeInactiveAt));
-            winston.log("info", id, this.distinctFlights[id].length, "distinct flight(s) out of ", flights.length);
+            logger.log("info", id, "active from", new Date(becomeActiveAt), "to", new Date(becomeInactiveAt));
+            logger.log("info", id, this.distinctFlights[id].length, "distinct flight(s) out of ", flights.length);
             this.events[id] = Object.assign({ id: id, flights: flights, becomeActiveAt: becomeActiveAt, becomeInactiveAt: becomeInactiveAt }, event);
         });
 
@@ -131,37 +123,42 @@ class FlightTracker {
 
         const time = Date.now();
         Object.keys(this.events).forEach((id) => {
-            const event = events[id];
+            const event = this.events[id];
             const active = (time > event.becomeActiveAt && time <= event.becomeInactiveAt);
             const currentFlightIndex = active ? this.getCurrentFlightIndex(id, time) : -1;
+            this.eventStatus[id] = {
+                active: active,
+                currentFlightIndex: currentFlightIndex,
+            }
 
             if (currentFlightIndex != -1) {
                 const ref = '/events/' + id + "/currentFlightIndex";
-                winston.log("info", "writing currentFlightIndex to firebase", currentFlightIndex, ref);
-                const dbRef = firebase.database().ref(ref);
+                logger.log("info", "writing currentFlightIndex to firebase", currentFlightIndex, ref);
+                const dbRef = firebaseConnection.database().ref(ref);
                 dbRef.set(currentFlightIndex);
 
                 const flight = event.flights[currentFlightIndex];
                 const isEnroute = flight.updated.departureTime < time && time < flight.updated.arrivalTime;
-                const threshold = isEnroute ? thresholdEnroute : thresholdNormal;
+                const threshold = isEnroute ? THRESHOLD_ENROUTE : THRESHOLD_NORMAL;
 
                 if (!this.jsonData[id][currentFlightIndex] || time - this.jsonData[id][currentFlightIndex].recorded > threshold) {
-                    winston.log("info", "UPDATING event", id, currentFlightIndex);
+                    logger.log("info", "UPDATING event", id, currentFlightIndex);
                     this.updateFromFlightAware(event, time, adjust);
                 }
             }
-            this.events[id] = Object.assign({}, { currentFlightIndex: currentFlightIndex, active: active }, event)
         })
     }
 
 
     updateFromFlightAware(event, time, adjust) {
-        const flight = event.flights[event.currentFlightIndex];
+        const status = this.eventStatus[event.id];
+        console.log("event.currentFlightIndex", status.currentFlightIndex);
+        const flight = event.flights[status.currentFlightIndex];
 
-        this.getFlightInfoExNext(null, event.id, flight.number, { adjust: adjust, time: time, flightIndex: event.currentFlightIndex });
+        this.getFlightInfoExNext(null, event.id, flight.number, { adjust: adjust, time: time, flightIndex: status.currentFlightIndex });
 
         if (flight.updated.departureTime < time && time < flight.updated.arrivalTime) {
-            this.getInFlightInfo(null, event.id, flight.number, { adjust: adjust, time: time, flightIndex: event.currentFlightIndex });
+            this.getInFlightInfo(null, event.id, flight.number, { adjust: adjust, time: time, flightIndex: status.currentFlightIndex });
         }
 
     }
@@ -172,20 +169,21 @@ class FlightTracker {
                 howMany: 3
             }
         };
-        winston.log('verbose', "HTTP FlightXML2.FlightInfoEx", id, options.flightIndex, flightNumber);
+        logger.log('verbose', "HTTP FlightXML2.FlightInfoEx", id, options.flightIndex, flightNumber);
 
-        flightAwareClient.methods.flightInfo(flightInfoArgs, this.handleFlightInfo.bind(this))
-            .on('error', function (err) {
-                if (res) {
-                    res.json({ "message": "ERROR IN HTTP CONNECTION" });
-                }
-                winston.log('warn', "ERROR IN HTTP CONNECTION", err.request.options);
-            });;;
+        flightAwareClient.methods.flightInfo(flightInfoArgs, (data, response) => {
+            this.handleFlightInfo(data, id, options);
+        }).on('error', function (err) {
+            if (res) {
+                res.json({ "message": "ERROR IN HTTP CONNECTION" });
+            }
+            logger.log('warn', "ERROR IN HTTP CONNECTION", err.request.options);
+        });;;
     }
-    handleFlightInfo(data, response) {
-
+    handleFlightInfo(data, id, options) {
+        console.log("handleFlightInfo", data)
         if (data.FlightInfoExResult) {
-            const adjusted = adjustFlightTimes(data.FlightInfoExResult.flights, options.adjust);
+            const adjusted = this.adjustFlightTimes(data.FlightInfoExResult.flights, options.adjust);
             const time = Math.floor((options.time ? options.time : Date.now()) / 1000);
 
             const flight = this.getFlight(adjusted, options.flightIndex, id);
@@ -199,7 +197,7 @@ class FlightTracker {
 
                 json.message = "ERROR " + id + " flight " + options.flightIndex + " not found among adjusted flights, time=" + (new Date(time * 1000), time);
 
-                winston.log("warn", json.message);
+                logger.log("warn", json.message);
 
             } else {
                 json.ident = flight.ident;
@@ -229,22 +227,25 @@ class FlightTracker {
 
                 json.recorded = Date.now();
 
-                currentFlightIndex[id] = json.flightIndex;
-                jsonData[id][json.flightIndex] = json;
+                this.currentFlightIndex[id] = json.flightIndex;
+                this.jsonData[id][json.flightIndex] = json;
 
                 this.updateEventFlightTimes(json);
 
                 const ref = '/events/' + id + "/flights/" + json.flightIndex;
 
-                winston.log("info", "writing to firebase", json.ident, ref);
-                const flightRef = firebase.database().ref(ref);
+                logger.log("info", "writing to firebase", json.ident, ref);
+                const flightRef = firebaseConnection.database().ref(ref);
 
                 flightRef.update(json);
             }
+            /**
             if (res) {
                 res.json(json);
             }
+             */
         }
+
 
     }
 
@@ -283,15 +284,15 @@ class FlightTracker {
         return _flights;
     }
     getCurrentFlightIndex(id, time) {
-        const flights = events[id].flights;
+        const flights = this.events[id].flights;
 
         for (let i = 0, len = flights.length; i < len; i++) {
             const flight = flights[i];
             const updatedDepartureTime = flight.updated.departureTime;
             const updatedArrivalTime = flight.updated.arrivalTime;
 
-            const beginAt = updatedDepartureTime - preBuffer;
-            const endAt = updatedArrivalTime + postBuffer;
+            const beginAt = updatedDepartureTime - PRE_BUFFER;
+            const endAt = updatedArrivalTime + POST_BUFFER;
 
             if (time < beginAt) {
                 return i - 1;
@@ -303,7 +304,7 @@ class FlightTracker {
         return -1;
     }
     updateEventFlightTimes(json) {
-        const event = events[json.eventId];
+        const event = this.events[json.eventId];
         const flight = event.flights[json.flightIndex];
 
         if (flight.number === json.ident) {
@@ -317,22 +318,22 @@ class FlightTracker {
             const deltaArrivalTime = newArrivalTime - currentArrivalTime;
 
             if (deltaDepartureTime != 0) {
-                winston.log("info", "Updating " + json.eventId + ":" + json.flightIndex + " departure=" + json.departure + " (delta=" + deltaDepartureTime + ")");
+                logger.log("info", "Updating " + json.eventId + ":" + json.flightIndex + " departure=" + json.departure + " (delta=" + deltaDepartureTime + ")");
                 event.flights[json.flightIndex].updated.departureTime = newDepartureTime;
             }
             if (deltaArrivalTime != 0) {
-                winston.log("info", "Updating " + json.eventId + ":" + json.flightIndex + " arrival=" + json.arrival + " (delta=" + deltaArrivalTime + ")");
+                logger.log("info", "Updating " + json.eventId + ":" + json.flightIndex + " arrival=" + json.arrival + " (delta=" + deltaArrivalTime + ")");
                 event.flights[json.flightIndex].updated.arrivalTime = newArrivalTime;
             }
         } else {
             //sanity check. this should never happen
-            winston.log("error", "ERROR IDENT MISMATCH #56---CANNOT UPDATE FLIGHT TIMES", flight.number, json.ident);
+            logger.log("error", "ERROR IDENT MISMATCH #56---CANNOT UPDATE FLIGHT TIMES", flight.number, json.ident);
         }
 
     }
     getFlight(screened, index, id) {
 
-        const configuredDepartureTime = events[id].flights[index].configured.departureTime;
+        const configuredDepartureTime = this.events[id].flights[index].configured.departureTime;
 
         for (let i = 0, len = screened.length; i < len; i++) {
             const filedDepartureTime = screened[i].filed_departuretime * 1000;
@@ -350,7 +351,7 @@ class FlightTracker {
                 ident: flightNumber
             }
         };
-        winston.log("verbose", "HTTP FlightXML2.InFlightInfo", id, options.flightIndex, flightNumber);
+        logger.log("verbose", "HTTP FlightXML2.InFlightInfo", id, options.flightIndex, flightNumber);
         flightAwareClient.methods.inFlightInfo(args, function (data, response) {
             var retobj = data.InFlightInfoResult;
 
@@ -402,12 +403,12 @@ class FlightTracker {
                 }
                 var ref = '/events/' + id + "/flights/" + json.flightIndex + "/enroute";
 
-                winston.log("info", "writing enroute to firebase", ref);
-                var flightRef = firebase.database().ref(ref);
+                logger.log("info", "writing enroute to firebase", ref);
+                var flightRef = firebaseConnection.database().ref(ref);
                 try {
                     flightRef.update(json.enroute);
                 } catch (exc) {
-                    winston.log('warn', 'could not update firebase with enroute', ref, exc);
+                    logger.log('warn', 'could not update firebase with enroute', ref, exc);
                 }
 
                 currentJsonData[id][json.flightIndex] = json;
@@ -425,103 +426,34 @@ class FlightTracker {
                 res.json({ "message": "ERROR IN HTTP CONNECTION" });
             }
 
-            winston.log("warn", "ERROR IN HTTP CONNECTION", err.request.options);
+            logger.log("warn", "ERROR IN HTTP CONNECTION", err.request.options);
         });;;
     }
-    getFlightInfoExNext(res, id, flightNumber, options) {
-        var flightInfoArgs = {
-            parameters: {
-                ident: flightNumber,
-                howMany: 3
-            }
-        };
-        winston.log('verbose', "HTTP FlightXML2.FlightInfoEx", id, options.flightIndex, flightNumber);
-        client.methods.flightInfo(flightInfoArgs, function (data, response) {
-
-
-            if (data.FlightInfoExResult) {
-                let adjusted = adjustFlightTimes(data.FlightInfoExResult.flights, options.adjust);
-                let time = Math.floor((options.time ? options.time : Date.now()) / 1000);
-
-                let flight = getFlight(adjusted, options.flightIndex, id);
-
-
-                var json = {};
-                json.eventId = id;
-                json.flightIndex = options.flightIndex;
-
-                if (!flight) {
-
-                    json.message = "ERROR " + id + " flight " + options.flightIndex + " not found among adjusted flights, time=" + (new Date(time * 1000), time);
-
-                    winston.log("warn", json.message);
-
-                } else {
-                    json.ident = flight.ident;
-                    let departureTime = flight.filed_departuretime * 1000;
-                    let takeoffTime = flight.actualdeparturetime > 0 ? flight.actualdeparturetime * 1000 : -1;
-                    let estimatedLandingTime = takeoffTime != -1 ? flight.estimatedarrivaltime * 1000 : -1;
-
-                    let arrivalTime = flight.estimatedarrivaltime * 1000;
-
-                    json.departure = new Date(departureTime);
-                    json.departureTime = departureTime;
-
-
-                    if (takeoffTime != -1) {
-                        json.takeoff = new Date(takeoffTime);
-                        json.takeoffTime = takeoffTime;
-
-                    }
-                    if (estimatedLandingTime != -1) {
-                        json.estimatedLanding = new Date(estimatedLandingTime);
-                        json.estimatedLandingTime = estimatedLandingTime;
-
-                    }
-
-                    json.arrival = new Date(arrivalTime);
-                    json.arrivalTime = arrivalTime;
-
-
-
-
-
-
-
-
-                    json.recorded = Date.now();
-
-                    currentFlightIndex[id] = json.flightIndex;
-                    jsonData[id][json.flightIndex] = json;
-
-
-                    updateEventFlightTimes(json);
-
-                    var ref = '/events/' + id + "/flights/" + json.flightIndex;
-
-                    winston.log("info", "writing to firebase", json.ident, ref);
-                    var flightRef = firebase.database().ref(ref);
-
-                    flightRef.update(json);
+    getEnrouteJson(eventId) {
+        if (!this.jsonData[eventId] || !this.eventStatus[id]) return null;
+        const event = this.events[eventId];
+        const currentFlightIndex = this.eventStatus[id].currentFlightIndex;
+        const active = this.eventStatus[id].active;
+        if (active && currentFlightIndex >= 0) {
+            const json = this.jsonData[eventId][currentFlightIndex];
+            const isEnroute = json.departureTime < time && time < json.arrivalTime;
+            if (!isEnroute) {
+                delete json.enroute;
+                //delete this.currentJsonData[eventId][event.currentFlightIndex];
+            } else if (this.currentJsonData[eventId][currentFlightIndex]) {
+                json.enroute = this.currentJsonData[eventId][currentFlightIndex].enroute;
+                if (!json.enroute) {
+                    json.enroute = {};
                 }
-
-
-
-
-                if (res) {
-                    res.json(json);
-                }
-
-
             }
-
-        }).on('error', function (err) {
-            if (res) {
-                res.json({ "message": "ERROR IN HTTP CONNECTION" });
+            const threshold = isEnroute ? thresholdEnroute : thresholdNormal;
+            if (Date.now() - json.recorded > threshold) {
+                this.updateFromFlightAware(event, time, adjust)
             }
-
-            winston.log('warn', "ERROR IN HTTP CONNECTION", err.request.options);
-        });;;
+            return json;
+        } else {
+            return -1;
+        }
     }
 
 }
