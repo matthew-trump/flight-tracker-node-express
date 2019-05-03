@@ -1,3 +1,6 @@
 *-local.json
 *-local.sh
+
+keys/*key*
+
 node_modules
