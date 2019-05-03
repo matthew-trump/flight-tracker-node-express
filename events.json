@@ -1,30 +1,5 @@
 {
-    "dryrun6b": {
-        "flights": [
-            {
-                "number": "JBU523",
-                "departure": "Wed, 08 May 2019 12:30:00 GMT-0400",
-                "arrival": "Wed, 08 May 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            },
-            {
-                "number": "JBU523",
-                "departure": "Thu, 09 May 2019 12:30:00 GMT-0400",
-                "arrival": "Thu, 09 May 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            },
-            {
-                "number": "JBU523",
-                "departure": "Fri, 10 May 2019 12:30:00 GMT-0400",
-                "arrival": "Fri, 10 May 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            }
-        ]
-    },
-    "dryrun-123": {
+    "newtest-123": {
         "type": "extrapolated",
         "flightNumber": "JBU123",
         "dateBegin": "24 Apr 2019",
@@ -33,70 +8,5 @@
         "timeScheduledArrival": "10:15:00 GMT-0700",
         "origin": "JFK",
         "destination": "LAX"
-    },
-    "dryrun-323": {
-        "type": "extrapolated",
-        "flightNumber": "JBU323",
-        "dateBegin": "24 Apr 2019",
-        "dateEnd": "31 Jan 2020",
-        "timeScheduledDeparture": "09:55:00 GMT-0400",
-        "timeScheduledArrival": "12:59:00 GMT-0700",
-        "origin": "JFK",
-        "destination": "LAX"
-    },
-    "dryrun-523": {
-        "type": "extrapolated",
-        "flightNumber": "JBU523",
-        "dateBegin": "24 Oct 2019",
-        "dateEnd": "31 Jan 2020",
-        "timeScheduledDeparture": "12:30:00 GMT-0400",
-        "timeScheduledArrival": "15:28:00 GMT-0700",
-        "origin": "JFK",
-        "destination": "LAX"
-    },
-    "dryrun-623": {
-        "type": "extrapolated",
-        "flightNumber": "JBU623",
-        "dateBegin": "24 Oct 2019",
-        "dateEnd": "31 Jan 2020",
-        "timeScheduledDeparture": "16:50:00 GMT-0400",
-        "timeScheduledArrival": "20:08:00 GMT-0700",
-        "origin": "JFK",
-        "destination": "LAX"
-    },
-    "dryrun-1123": {
-        "type": "extrapolated",
-        "flightNumber": "JBU1123",
-        "dateBegin": "24 Oct 2019",
-        "dateEnd": "31 Jan 2020",
-        "timeScheduledDeparture": "19:45:00 GMT-0400",
-        "timeScheduledArrival": "23:12:00 GMT-0700",
-        "origin": "JFK",
-        "destination": "LAX"
-    },
-    "live": {
-        "flights": [
-            {
-                "number": "JBU523",
-                "departure": "Wed, 11 Oct 2019 12:30:00 GMT-0400",
-                "arrival": "Wed, 11 Oct 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            },
-            {
-                "number": "JBU523",
-                "departure": "Thu, 12 Oct 2019 12:30:00 GMT-0400",
-                "arrival": "Thu, 12 Oct 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            },
-            {
-                "number": "JBU523",
-                "departure": "Fri, 13 Oct 2019 12:30:00 GMT-0400",
-                "arrival": "Fri, 13 Oct 2019 15:28:00 GMT-0700",
-                "origin": "JFK",
-                "destination": "LAX"
-            }
-        ]
     }
 }
