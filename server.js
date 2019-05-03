@@ -4,9 +4,9 @@ const cors = require('cors');
 const path = require('path');
 //const ping = require('./ping');
 //const { jwtAuthorization, jwtLogin, jwtUnauthorizedError } = require('./jwt-auth');
-//const api = require("./api");
+const FlightTracker = require('./flight-tracker');
+const api = require("./api");
 
-const flightTracker = require('./flight-tracker');
 
 const app = express();
 app.use(bodyParser.json());
