@@ -22,7 +22,7 @@ class FlightTracker {
         this.jsonData = {};
         this.currentFlightIndex = {};
         this.currentJsonData = {};
-        this.originalConfig = JSON.parse(JSON.stringify(EVENTS))
+        this.originalConfig = JSON.parse(JSON.stringify(EVENTS));
         this.currentFlightIndex = {};
         this.distinctFlights = {};
         this.eventStatus = {}
@@ -87,7 +87,7 @@ class FlightTracker {
 
 
             }
-            //console.log("FLIGHTS", flights);
+
             for (let i = 0, len = flights.length; i < len; i++) {
                 const flight = flights[i];
 
@@ -429,11 +429,11 @@ class FlightTracker {
             logger.log("warn", "ERROR IN HTTP CONNECTION", err.request.options);
         });;;
     }
-    getEnrouteJson(eventId) {
-        if (!this.jsonData[eventId] || !this.eventStatus[id]) return null;
+    getEnrouteJson(eventId, time, adjust) {
+        if (!this.jsonData[eventId] || !this.eventStatus[eventId]) return null;
         const event = this.events[eventId];
-        const currentFlightIndex = this.eventStatus[id].currentFlightIndex;
-        const active = this.eventStatus[id].active;
+        const currentFlightIndex = this.eventStatus[eventId].currentFlightIndex;
+        const active = this.eventStatus[eventId].active;
         if (active && currentFlightIndex >= 0) {
             const json = this.jsonData[eventId][currentFlightIndex];
             const isEnroute = json.departureTime < time && time < json.arrivalTime;
@@ -446,7 +446,7 @@ class FlightTracker {
                     json.enroute = {};
                 }
             }
-            const threshold = isEnroute ? thresholdEnroute : thresholdNormal;
+            const threshold = isEnroute ? THRESHOLD_ENROUTE : THRESHOLD_NORMAL;
             if (Date.now() - json.recorded > threshold) {
                 this.updateFromFlightAware(event, time, adjust)
             }
@@ -458,4 +458,4 @@ class FlightTracker {
 
 }
 
-module.exports = { flightTracker: new FlightTracker() }
+module.exports = { FlightTracker: new FlightTracker() }
