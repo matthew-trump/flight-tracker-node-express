@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const toobusy = require('node-toobusy');
-const FlightTracker = require('./flight-tracker');
+const { FlightTracker } = require('./flight-tracker');
 
 
 router.use(function (req, res, next) {
@@ -17,7 +17,7 @@ router.get('/', function (req, res, next) {
 });
 
 router.get('/config/events', function (req, res, next) {
-    return res.json(FlightTracker.originalConfig);
+    return res.json(Object.keys(FlightTracker.originalConfig).map(key => Object.assign({}, { id: key }, FlightTracker.originalConfig[key])));
 });
 
 router.get('/config/event/:eventId', function (req, res, next) {
@@ -49,7 +49,7 @@ router.get('/tracker/:eventId/next', function (req, res, next) {
     }
 
     if (eventId && (typeof FlightTracker.events[eventId] !== 'undefined')) {
-        const json = FlightTracker.getEnrouteJson(eventId);
+        const json = FlightTracker.getEnrouteJson(eventId, time, adjust);
         if (!json) {
             res.send({ message: "WAITING FOR UPDATE. PLEASE RELOAD.", time: time, eventId: eventId });
         } else if (json === -1) {
