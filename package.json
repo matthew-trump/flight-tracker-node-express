@@ -18,7 +18,7 @@
   "homepage": "https://github.com/matthew-trump/flight-tracker-node-express#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.16.4",
+    "express": "^4.17.3",
     "express-jwt": "^5.3.1",
     "firebase-admin": "^7.3.0",
     "node-rest-client": "^3.1.0",
